@@ -43,72 +43,26 @@
 
   <repositories>
     <repository>
-      <id>bigquery-parallel-read-maven-repository</id>
-      <name>BigQuery parallel read Maven repository</name>
-      <url>https://storage.googleapis.com/bigquery-parallel-read-maven-repository</url>
+      <id>bigquery-storage-maven-repository</id>
+      <name>BigQuery Storage Maven repository</name>
+      <url>https://storage.googleapis.com/bigquery-storage-maven-repository</url>
     </repository>
   </repositories>
 
   <dependencies>
     <dependency>
-      <groupId>com.google.cloud.bigquery.v3</groupId>
-      <artifactId>parallel_read_client</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.opencensus</groupId>
-      <artifactId>opencensus-api</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.opencensus</groupId>
-      <artifactId>opencensus-exporter-trace-stackdriver</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.opencensus</groupId>
-      <artifactId>opencensus-impl</artifactId>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.google.cloud.trace</groupId>
-      <artifactId>core</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.google.cloud.trace</groupId>
-      <artifactId>trace-grpc-api-service</artifactId>
+      <groupId>com.google.cloud.bigquery.storage.v1alpha1</groupId>
+      <artifactId>bigquery_storage_client</artifactId>
     </dependency>
   </dependencies>
 
   <dependencyManagement>
     <dependencies>
       <dependency>
-        <groupId>com.google.cloud.bigquery.v3</groupId>
-        <artifactId>parallel_read_client</artifactId>
-        <version>0.0.4</version>
+        <groupId>com.google.cloud.bigquery.storage.v1alpha1</groupId>
+        <artifactId>bigquery_storage_client</artifactId>
+        <version>0.0.3</version>
       </dependency>
-      <dependency>
-        <groupId>io.opencensus</groupId>
-        <artifactId>opencensus-api</artifactId>
-        <version>0.12.2</version>
-      </dependency>
-      <dependency>
-        <groupId>io.opencensus</groupId>
-        <artifactId>opencensus-exporter-trace-stackdriver</artifactId>
-        <version>0.12.2</version>
-      </dependency>
-      <dependency>
-        <groupId>io.opencensus</groupId>
-        <artifactId>opencensus-impl</artifactId>
-        <version>0.12.2</version>
-        <scope>runtime</scope>
-      </dependency>
-      <dependency>
-        <groupId>com.google.cloud.trace</groupId>
-        <artifactId>core</artifactId>
-        <version>0.7.0</version>
-      </dependency>  <dependency>
-      <groupId>com.google.cloud.trace</groupId>
-      <artifactId>trace-grpc-api-service</artifactId>
-      <version>0.7.0</version>
-    </dependency>
     </dependencies>
   </dependencyManagement>
 

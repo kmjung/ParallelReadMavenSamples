@@ -1,18 +1,13 @@
 import com.google.api.gax.rpc.ServerStream;
-import com.google.cloud.bigquery.v3.ParallelRead.ReadLocation;
-import com.google.cloud.bigquery.v3.ParallelRead.ReadOptions;
-import com.google.cloud.bigquery.v3.ParallelRead.ReadRowsRequest;
-import com.google.cloud.bigquery.v3.ParallelRead.ReadRowsResponse;
-import com.google.cloud.bigquery.v3.ParallelRead.Session;
-import com.google.cloud.bigquery.v3.ParallelReadServiceClient;
-import com.google.cloud.bigquery.v3.ParallelReadServiceSettings;
+import com.google.cloud.bigquery.storage.v1alpha1.BigQueryStorageClient;
+import com.google.cloud.bigquery.storage.v1alpha1.Storage.ReadRowsRequest;
+import com.google.cloud.bigquery.storage.v1alpha1.Storage.ReadRowsResponse;
+import com.google.cloud.bigquery.storage.v1alpha1.Storage.ReadSession;
+import com.google.cloud.bigquery.storage.v1alpha1.Storage.Stream;
+import com.google.cloud.bigquery.storage.v1alpha1.Storage.StreamPosition;
 import com.google.cloud.bigquery.v3.TableReferenceProto.TableReference;
 import com.google.common.base.Stopwatch;
 import io.opencensus.common.Scope;
-import io.opencensus.exporter.trace.stackdriver.StackdriverTraceConfiguration;
-import io.opencensus.exporter.trace.stackdriver.StackdriverTraceExporter;
-import io.opencensus.trace.Tracer;
-import io.opencensus.trace.Tracing;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -28,13 +23,15 @@ public class MultiThreadedClientTest {
 
   private static final int NUM_THREADS = 4;
 
-  private static final Tracer tracer = Tracing.getTracer();
+  private static void startReader(int threadId, Stream stream) throws Exception {
 
-  private static void startReader(int threadId, ReadLocation readLocation) throws Exception {
+    StreamPosition streamPosition = StreamPosition.newBuilder()
+        .setStream(stream)
+        .setOffset(0)
+        .build();
 
     ReadRowsRequest request = ReadRowsRequest.newBuilder()
-        .setReadLocation(readLocation)
-        .setOptions(ReadOptions.newBuilder().setMaxRows(1000))
+        .setReadPosition(streamPosition)
         .build();
 
     long numResponses = 0;
@@ -42,30 +39,24 @@ public class MultiThreadedClientTest {
     long numTotalBytes = 0;
     long lastReportTimeNanos = 0;
 
-    try (Scope ss = tracer.spanBuilder("thread-" + threadId).startScopedSpan()) {
-      try (ParallelReadServiceClient client = ParallelReadServiceClient.create()) {
-        ServerStream<ReadRowsResponse> stream = client.readRowsCallable().call(request);
-        tracer.getCurrentSpan().addAnnotation("Created read stream " + threadId);
-        Stopwatch stopwatch = Stopwatch.createStarted();
-        for (ReadRowsResponse response : stream) {
-          tracer.getCurrentSpan().addAnnotation("Received ReadRowsResponse");
+    try (BigQueryStorageClient client = BigQueryStorageClient.create()) {
+      Stopwatch stopwatch = Stopwatch.createStarted();
+      for (ReadRowsResponse response : client.readRowsCallable().call(request)) {
+        numResponses++;
+        numRows += response.getRowsCount();
+        numTotalBytes += response.getSerializedSize();
 
-          numResponses++;
-          numRows += response.getRowsCount();
-          numTotalBytes += response.getSerializedSize();
+        long elapsedTimeNanos = stopwatch.elapsed(TimeUnit.NANOSECONDS);
+        if (elapsedTimeNanos - lastReportTimeNanos > TimeUnit.SECONDS.toNanos(10)) {
+          System.out.println(String.format(
+              "Thread %d received %d responses (%d rows) in 10s (%f MB/s)",
+              threadId, numResponses, numRows, (double) numTotalBytes / (1024 * 1024 * 10)));
+          numResponses = numRows = numTotalBytes = 0;
+          lastReportTimeNanos = elapsedTimeNanos;
+        }
 
-          long elapsedTimeNanos = stopwatch.elapsed(TimeUnit.NANOSECONDS);
-          if (elapsedTimeNanos - lastReportTimeNanos > TimeUnit.SECONDS.toNanos(10)) {
-            System.out.println(String.format(
-                "Thread %d received %d responses (%d rows) in 10s (%f MB/s)",
-                threadId, numResponses, numRows, (double) numTotalBytes / (1024 * 1024 * 10)));
-            numResponses = numRows = numTotalBytes = 0;
-            lastReportTimeNanos = elapsedTimeNanos;
-          }
-
-          if (elapsedTimeNanos > TimeUnit.SECONDS.toNanos(60)) {
-            break;
-          }
+        if (elapsedTimeNanos > TimeUnit.SECONDS.toNanos(60)) {
+          break;
         }
       }
     }
@@ -74,24 +65,20 @@ public class MultiThreadedClientTest {
   }
 
   public static void main(String[] args) throws Exception {
-
-    StackdriverTraceExporter.createAndRegister(
-        StackdriverTraceConfiguration.builder().build());
-
-    Session session;
-    try (ParallelReadServiceClient client = ParallelReadServiceClient.create()) {
-      session = client.createSession(TABLE_REFERENCE, NUM_THREADS);
+    ReadSession readSession;
+    try (BigQueryStorageClient client = BigQueryStorageClient.create()) {
+      readSession = client.createReadSession(TABLE_REFERENCE, NUM_THREADS);
     }
 
-    System.out.println("Created session with ID " + session.getName());
+    System.out.println("Created session with ID " + readSession.getName());
 
-    int numReaders = session.getInitialReadLocationsCount();
-    ExecutorService executorService = Executors.newFixedThreadPool(numReaders);
-    for (int i = 0; i < numReaders; i++) {
+    int numStreams = readSession.getStreamsCount();
+    ExecutorService executorService = Executors.newFixedThreadPool(numStreams);
+    for (int i = 0; i < numStreams; i++) {
       final int thread_id = i;
       executorService.submit(() -> {
         try {
-          startReader(thread_id, session.getInitialReadLocations(thread_id));
+          startReader(thread_id, readSession.getStreams(thread_id));
         } catch (Exception e) {
           throw new RuntimeException(e);
         }
