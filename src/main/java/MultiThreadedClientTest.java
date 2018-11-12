@@ -1,5 +1,5 @@
-import com.google.api.gax.rpc.ServerStream;
 import com.google.cloud.bigquery.storage.v1alpha1.BigQueryStorageClient;
+import com.google.cloud.bigquery.storage.v1alpha1.BigQueryStorageSettings;
 import com.google.cloud.bigquery.storage.v1alpha1.Storage.ReadRowsRequest;
 import com.google.cloud.bigquery.storage.v1alpha1.Storage.ReadRowsResponse;
 import com.google.cloud.bigquery.storage.v1alpha1.Storage.ReadSession;
@@ -7,8 +7,8 @@ import com.google.cloud.bigquery.storage.v1alpha1.Storage.Stream;
 import com.google.cloud.bigquery.storage.v1alpha1.Storage.StreamPosition;
 import com.google.cloud.bigquery.v3.TableReferenceProto.TableReference;
 import com.google.common.base.Stopwatch;
-import io.opencensus.common.Scope;
 
+import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -23,7 +23,7 @@ public class MultiThreadedClientTest {
 
   private static final int NUM_THREADS = 4;
 
-  private static void startReader(int threadId, Stream stream) throws Exception {
+  private static void startReader(String endpoint, int threadId, Stream stream) throws Exception {
 
     StreamPosition streamPosition = StreamPosition.newBuilder()
         .setStream(stream)
@@ -39,7 +39,7 @@ public class MultiThreadedClientTest {
     long numTotalBytes = 0;
     long lastReportTimeNanos = 0;
 
-    try (BigQueryStorageClient client = BigQueryStorageClient.create()) {
+    try (BigQueryStorageClient client = getClient(endpoint)) {
       Stopwatch stopwatch = Stopwatch.createStarted();
       for (ReadRowsResponse response : client.readRowsCallable().call(request)) {
         numResponses++;
@@ -64,9 +64,21 @@ public class MultiThreadedClientTest {
     System.out.println("Thread " + threadId + " done");
   }
 
+  private static BigQueryStorageClient getClient(String endpoint) throws IOException {
+    BigQueryStorageSettings settings =
+        BigQueryStorageSettings.newBuilder()
+            .setEndpoint(endpoint)
+            .build();
+    return BigQueryStorageClient.create(settings);
+  }
+
   public static void main(String[] args) throws Exception {
+    String endpoint = args[0];
+
+    System.out.println("Creating a new client with endpoint " + endpoint);
+
     ReadSession readSession;
-    try (BigQueryStorageClient client = BigQueryStorageClient.create()) {
+    try (BigQueryStorageClient client = getClient(endpoint)) {
       readSession = client.createReadSession(TABLE_REFERENCE, NUM_THREADS);
     }
 
@@ -78,7 +90,7 @@ public class MultiThreadedClientTest {
       final int thread_id = i;
       executorService.submit(() -> {
         try {
-          startReader(thread_id, readSession.getStreams(thread_id));
+          startReader(endpoint, thread_id, readSession.getStreams(thread_id));
         } catch (Exception e) {
           throw new RuntimeException(e);
         }

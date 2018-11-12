@@ -24,18 +24,12 @@
         <executions>
           <execution>
             <goals>
-              <goal>exec</goal>
+              <goal>java</goal>
             </goals>
           </execution>
         </executions>
         <configuration>
-          <executable>java</executable>
-          <arguments>
-            <argument>-classpath</argument>
-            <classpath/>
-            <!-- <argument>-Xmx256m</argument> -->
-            <argument>MultiThreadedClientTest</argument>
-          </arguments>
+          <mainClass>MultiThreadedClientTest</mainClass>
         </configuration>
       </plugin>
     </plugins>
@@ -53,17 +47,8 @@
     <dependency>
       <groupId>com.google.cloud.bigquery.storage.v1alpha1</groupId>
       <artifactId>bigquery_storage_client</artifactId>
+      <version>0.0.4</version>
     </dependency>
   </dependencies>
-
-  <dependencyManagement>
-    <dependencies>
-      <dependency>
-        <groupId>com.google.cloud.bigquery.storage.v1alpha1</groupId>
-        <artifactId>bigquery_storage_client</artifactId>
-        <version>0.0.3</version>
-      </dependency>
-    </dependencies>
-  </dependencyManagement>
 
 </project>
