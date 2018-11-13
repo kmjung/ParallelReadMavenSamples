@@ -1,3 +1,4 @@
+import com.google.api.gax.rpc.ServerStream;
 import com.google.cloud.bigquery.storage.v1alpha1.BigQueryStorageClient;
 import com.google.cloud.bigquery.storage.v1alpha1.BigQueryStorageSettings;
 import com.google.cloud.bigquery.storage.v1alpha1.Storage.ReadRowsRequest;
@@ -41,7 +42,8 @@ public class MultiThreadedClientTest {
 
     try (BigQueryStorageClient client = getClient(endpoint)) {
       Stopwatch stopwatch = Stopwatch.createStarted();
-      for (ReadRowsResponse response : client.readRowsCallable().call(request)) {
+      ServerStream<ReadRowsResponse> responseStream = client.readRowsCallable().call(request);
+      for (ReadRowsResponse response : responseStream) {
         numResponses++;
         numRows += response.getRowsCount();
         numTotalBytes += response.getSerializedSize();
@@ -53,10 +55,6 @@ public class MultiThreadedClientTest {
               threadId, numResponses, numRows, (double) numTotalBytes / (1024 * 1024 * 10)));
           numResponses = numRows = numTotalBytes = 0;
           lastReportTimeNanos = elapsedTimeNanos;
-        }
-
-        if (elapsedTimeNanos > TimeUnit.SECONDS.toNanos(60)) {
-          break;
         }
       }
     }
