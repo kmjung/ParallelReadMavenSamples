@@ -35,20 +35,14 @@
     </plugins>
   </build>
 
-  <repositories>
-    <repository>
-      <id>bigquery-storage-maven-repository</id>
-      <name>BigQuery Storage Maven repository</name>
-      <url>https://storage.googleapis.com/bigquery-storage-maven-repository</url>
-    </repository>
-  </repositories>
-
   <dependencies>
+    <!-- https://mvnrepository.com/artifact/com.google.cloud/google-cloud-bigquerystorage -->
     <dependency>
-      <groupId>com.google.cloud.bigquery.storage.v1alpha1</groupId>
-      <artifactId>bigquery_storage_client</artifactId>
-      <version>0.0.4</version>
+      <groupId>com.google.cloud</groupId>
+      <artifactId>google-cloud-bigquerystorage</artifactId>
+      <version>0.95.0-beta</version>
     </dependency>
+
   </dependencies>
 
 </project>
