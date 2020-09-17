@@ -20,9 +20,9 @@ public class MultiThreadedClientTest {
   private static final Integer DEFAULT_NUM_THREADS = 4;
 
   private static final TableReference TABLE_REFERENCE = TableReference.newBuilder()
-      .setProjectId("bigquery-public-data")
-      .setDatasetId("samples")
-      .setTableId("wikipedia")
+      .setProjectId("alekseyv-scalableai-dev")
+      .setDatasetId("criteo_kaggle_2")
+      .setTableId("days_duplicated_columns")
       .build();
 
   private static class ReaderThread extends Thread {
