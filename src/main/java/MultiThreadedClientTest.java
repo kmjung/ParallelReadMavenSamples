@@ -1,4 +1,6 @@
+import com.google.api.core.ApiFunction;
 import com.google.cloud.bigquery.storage.v1beta1.BigQueryStorageClient;
+import com.google.cloud.bigquery.storage.v1beta1.BigQueryStorageSettings;
 import com.google.cloud.bigquery.storage.v1beta1.Storage.CreateReadSessionRequest;
 import com.google.cloud.bigquery.storage.v1beta1.Storage.DataFormat;
 import com.google.cloud.bigquery.storage.v1beta1.Storage.ReadRowsRequest;
@@ -7,8 +9,11 @@ import com.google.cloud.bigquery.storage.v1beta1.Storage.ReadSession;
 import com.google.cloud.bigquery.storage.v1beta1.Storage.Stream;
 import com.google.cloud.bigquery.storage.v1beta1.Storage.StreamPosition;
 import com.google.cloud.bigquery.storage.v1beta1.TableReferenceProto.TableReference;
+import com.google.cloud.bigquery.storage.v1beta1.stub.EnhancedBigQueryStorageStubSettings;
 import com.google.common.base.Stopwatch;
 
+import io.grpc.ManagedChannelBuilder;
+import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -17,7 +22,7 @@ import java.util.concurrent.TimeUnit;
 
 public class MultiThreadedClientTest {
 
-  private static final Integer DEFAULT_NUM_THREADS = 4;
+  private static final Integer DEFAULT_NUM_THREADS = 1;
 
   private static final TableReference TABLE_REFERENCE = TableReference.newBuilder()
       .setProjectId("bigquery-public-data")
@@ -103,7 +108,21 @@ public class MultiThreadedClientTest {
 
     List<ReaderThread> readerThreads = new ArrayList<>();
 
-    try (BigQueryStorageClient client = BigQueryStorageClient.create()) {
+    BigQueryStorageSettings.Builder settingsBuilder = BigQueryStorageSettings.newBuilder();
+    EnhancedBigQueryStorageStubSettings.Builder stubSettingsBuilder = settingsBuilder.getStubSettingsBuilder();
+    stubSettingsBuilder.setTransportChannelProvider(
+        EnhancedBigQueryStorageStubSettings.defaultGrpcTransportProviderBuilder()
+            .setChannelConfigurator(
+                new ApiFunction<ManagedChannelBuilder, ManagedChannelBuilder>() {
+                  @Override
+                  public ManagedChannelBuilder apply(ManagedChannelBuilder managedChannelBuilder) {
+                    ((NettyChannelBuilder)managedChannelBuilder).initialFlowControlWindow(10 * 1024 * 1024);
+                    return managedChannelBuilder;
+                  }
+                })
+            .build());
+
+    try (BigQueryStorageClient client = BigQueryStorageClient.create(settingsBuilder.build())) {
       ReadSession readSession = client.createReadSession(request);
       System.out.println(String.format("Created read session with ID %s", readSession.getName()));
       for (Stream stream : readSession.getStreamsList()) {
