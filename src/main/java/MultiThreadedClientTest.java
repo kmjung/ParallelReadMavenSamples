@@ -1,4 +1,5 @@
 import com.google.cloud.bigquery.storage.v1beta1.BigQueryStorageClient;
+import com.google.cloud.bigquery.storage.v1beta1.BigQueryStorageSettings;
 import com.google.cloud.bigquery.storage.v1beta1.Storage.CreateReadSessionRequest;
 import com.google.cloud.bigquery.storage.v1beta1.Storage.DataFormat;
 import com.google.cloud.bigquery.storage.v1beta1.Storage.ReadRowsRequest;
@@ -102,6 +103,11 @@ public class MultiThreadedClientTest {
             .build();
 
     List<ReaderThread> readerThreads = new ArrayList<>();
+
+    BigQueryStorageSettings settings =
+        BigQueryStorageSettings.newBuilder()
+            .setEndpoint("test-bigquerystorage-grpc.sandbox.googleapis.com")
+            .build();
 
     try (BigQueryStorageClient client = BigQueryStorageClient.create()) {
       ReadSession readSession = client.createReadSession(request);
