@@ -12,8 +12,6 @@ import com.google.common.base.Stopwatch;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 public class MultiThreadedClientTest {
@@ -21,7 +19,7 @@ public class MultiThreadedClientTest {
   private static final Integer DEFAULT_NUM_THREADS = 4;
 
   private static final TableReference TABLE_REFERENCE = TableReference.newBuilder()
-      .setProjectId("bigquery-public-data")
+      .setProjectId("bigquerytestdefault")
       .setDatasetId("samples")
       .setTableId("wikipedia")
       .build();
@@ -49,12 +47,17 @@ public class MultiThreadedClientTest {
 
     private void readRows() throws Exception {
 
+      BigQueryStorageSettings clientSettings =
+          BigQueryStorageSettings.newBuilder()
+              .setEndpoint("test-bigquerystorage-grpc.sandbox.googleapis.com:443")
+              .build();
+
       ReadRowsRequest request =
           ReadRowsRequest.newBuilder()
               .setReadPosition(StreamPosition.newBuilder().setStream(stream).setOffset(0))
               .build();
 
-      try (BigQueryStorageClient client = BigQueryStorageClient.create()) {
+      try (BigQueryStorageClient client = BigQueryStorageClient.create(clientSettings)) {
         Stopwatch stopwatch = Stopwatch.createStarted();
         for (ReadRowsResponse response : client.readRowsCallable().call(request)) {
           numResponses++;
@@ -104,12 +107,12 @@ public class MultiThreadedClientTest {
 
     List<ReaderThread> readerThreads = new ArrayList<>();
 
-    BigQueryStorageSettings settings =
+    BigQueryStorageSettings clientSettings =
         BigQueryStorageSettings.newBuilder()
-            .setEndpoint("test-bigquerystorage-grpc.sandbox.googleapis.com")
+            .setEndpoint("test-bigquerystorage-grpc.sandbox.googleapis.com:443")
             .build();
 
-    try (BigQueryStorageClient client = BigQueryStorageClient.create()) {
+    try (BigQueryStorageClient client = BigQueryStorageClient.create(clientSettings)) {
       ReadSession readSession = client.createReadSession(request);
       System.out.println(String.format("Created read session with ID %s", readSession.getName()));
       for (Stream stream : readSession.getStreamsList()) {
