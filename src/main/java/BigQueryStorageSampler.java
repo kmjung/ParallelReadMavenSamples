@@ -1,3 +1,4 @@
+import com.google.api.gax.grpc.InstantiatingGrpcChannelProvider;
 import com.google.api.gax.rpc.FixedHeaderProvider;
 import com.google.cloud.bigquery.storage.v1.BigQueryReadClient;
 import com.google.cloud.bigquery.storage.v1.BigQueryReadSettings;
@@ -72,6 +73,13 @@ public class BigQueryStorageSampler {
         Option.builder()
             .longOpt("share_client")
             .desc("Whether reader threads should share a single client instance")
+            .build());
+    parseOptions.addOption(
+        Option.builder()
+            .longOpt("channels_per_cpu")
+            .desc("The number of channels to configure per CPU in GAPIC")
+            .hasArg()
+            .type(Float.class)
             .build());
     return parseOptions;
   }
@@ -148,6 +156,7 @@ public class BigQueryStorageSampler {
     final ReadStream readStream;
     final Optional<String> endpoint;
     final Optional<String> protocol;
+    final Optional<Float> channelsPerCpu;
     final Optional<BigQueryReadClient> client;
 
     long numResponses = 0;
@@ -155,11 +164,15 @@ public class BigQueryStorageSampler {
     long numTotalBytes = 0;
     long lastReportTimeMicros = 0;
 
-    public ReaderThread(ReadStream readStream, Optional<String> endpoint,
-        Optional<String> protocol) {
+    public ReaderThread(
+        ReadStream readStream,
+        Optional<String> endpoint,
+        Optional<String> protocol,
+        Optional<Float> channelsPerCpu) {
       this.readStream = readStream;
       this.endpoint = endpoint;
       this.protocol = protocol;
+      this.channelsPerCpu = channelsPerCpu;
       this.client = Optional.empty();
     }
 
@@ -167,6 +180,7 @@ public class BigQueryStorageSampler {
       this.readStream = readStream;
       this.endpoint = Optional.empty();
       this.protocol = Optional.empty();
+      this.channelsPerCpu = Optional.empty();
       this.client = Optional.of(client);
     }
 
@@ -183,7 +197,8 @@ public class BigQueryStorageSampler {
       ReadRowsRequest readRowsRequest =
           ReadRowsRequest.newBuilder().setReadStream(readStream.getName()).build();
 
-      try (BigQueryReadClient client = this.client.orElse(getClient(endpoint, protocol))) {
+      try (BigQueryReadClient client =
+              this.client.orElse(getClient(endpoint, protocol, channelsPerCpu))) {
         Stopwatch stopwatch = Stopwatch.createStarted();
         for (ReadRowsResponse response : client.readRowsCallable().call(readRowsRequest)) {
           numResponses++;
@@ -219,12 +234,20 @@ public class BigQueryStorageSampler {
     }
   }
 
-  private static BigQueryReadClient getClient(Optional<String> endpoint, Optional<String> protocol)
+  private static BigQueryReadClient getClient(
+      Optional<String> endpoint,
+      Optional<String> protocol,
+      Optional<Float> channelsPerCpu)
       throws Exception {
     BigQueryReadSettings.Builder builder = BigQueryReadSettings.newBuilder();
     endpoint.ifPresent(s -> builder.setEndpoint(s + ":443"));
     protocol.ifPresent(s -> builder.setHeaderProvider(
         FixedHeaderProvider.create("x-bigquerystorage-transport-protocol", s)));
+    channelsPerCpu.ifPresent(s -> builder.getStubSettingsBuilder().setTransportChannelProvider(
+        InstantiatingGrpcChannelProvider.newBuilder()
+            .setMaxInboundMessageSize(Integer.MAX_VALUE)
+            .setChannelsPerCpu(s)
+            .build()));
     return BigQueryReadClient.create(builder.build());
   }
 
@@ -243,7 +266,11 @@ public class BigQueryStorageSampler {
         Optional.ofNullable(commandLine.getOptionValue("endpoint"));
     Optional<String> protocol =
         Optional.ofNullable(commandLine.getOptionValue("protocol"));
-    Boolean shareClient = commandLine.hasOption("share_client");
+    boolean shareClient = commandLine.hasOption("share_client");
+    Optional<Float> channelsPerCpu =
+        commandLine.hasOption("channels_per_cpu")
+            ? Optional.of(Float.parseFloat(commandLine.getOptionValue("channels_per_cpu")))
+            : Optional.empty();
 
     System.out.println("Table: " + tableReference.toResourceName());
     System.out.println("Parent: " + parentProjectReference.toResourceName());
@@ -261,7 +288,7 @@ public class BigQueryStorageSampler {
 
     ReadSession readSession;
     long elapsedMillis;
-    try (BigQueryReadClient client = getClient(endpoint, protocol)) {
+    try (BigQueryReadClient client = getClient(endpoint, protocol, channelsPerCpu)) {
       Stopwatch stopwatch = Stopwatch.createStarted();
       readSession = client.createReadSession(createReadSessionRequest);
       stopwatch.stop();
@@ -277,7 +304,7 @@ public class BigQueryStorageSampler {
         readerThreads.add(
             shareClient
                 ? new ReaderThread(readStream, client)
-                : new ReaderThread(readStream, endpoint, protocol));
+                : new ReaderThread(readStream, endpoint, protocol, channelsPerCpu));
       }
 
       for (ReaderThread readerThread : readerThreads) {
