@@ -160,9 +160,13 @@ public class BigQueryStorageSampler {
     final Optional<BigQueryReadClient> client;
 
     long numResponses = 0;
-    long numRows = 0;
-    long numTotalBytes = 0;
+    long numResponseBytes = 0;
+    long numResponseRows = 0;
     long lastReportTimeMicros = 0;
+
+    long numTotalResponses = 0;
+    long numtotalResponseBytes = 0;
+    long numTotalResponseRows = 0;
 
     public ReaderThread(
         ReadStream readStream,
@@ -202,8 +206,8 @@ public class BigQueryStorageSampler {
         Stopwatch stopwatch = Stopwatch.createStarted();
         for (ReadRowsResponse response : client.readRowsCallable().call(readRowsRequest)) {
           numResponses++;
-          numRows += response.getRowCount();
-          numTotalBytes += response.getSerializedSize();
+          numResponseBytes += response.getSerializedSize();
+          numResponseRows += response.getRowCount();
           printPeriodicUpdate(stopwatch.elapsed(TimeUnit.MICROSECONDS));
 
           // This is just a simple end-to-end throughput test, so we don't decode the Avro record
@@ -212,7 +216,7 @@ public class BigQueryStorageSampler {
         }
 
         stopwatch.stop();
-        printPeriodicUpdate(stopwatch.elapsed(TimeUnit.MICROSECONDS));
+        updateCumulativeStatistics();
         System.out.println("Finished reading from stream " + readStream.getName());
       }
     }
@@ -224,14 +228,23 @@ public class BigQueryStorageSampler {
 
       System.out.println(String.format(
           "Received %d responses (%d rows) from stream %s in 10s (%f MiB/s)",
-          numResponses, numRows, readStream.getName(),
-          (double) numTotalBytes / (1024 * 1024 * 10)));
+          numResponses, numResponseRows, readStream.getName(),
+          (double) numResponseBytes / (1024 * 1024 * 10)));
 
-      numResponses = 0;
-      numRows = 0;
-      numTotalBytes = 0;
+      updateCumulativeStatistics();
       lastReportTimeMicros = elapsedMicros;
     }
+
+    private void updateCumulativeStatistics() {
+      numTotalResponses += numResponses;
+      numResponses = 0;
+      numtotalResponseBytes += numResponseBytes;
+      numResponseBytes = 0;
+      numTotalResponseRows += numResponseRows;
+      numResponseRows = 0;
+    }
+
+    private long getNumTotalResponseRows() { return numTotalResponseRows; }
   }
 
   private static BigQueryReadClient getClient(
@@ -315,7 +328,12 @@ public class BigQueryStorageSampler {
         readerThread.join();
       }
 
-      System.out.println("All reader threads finished; exiting");
+      long numTotalResponseRows = 0;
+      for (ReaderThread readerThread : readerThreads) {
+        numTotalResponseRows += readerThread.getNumTotalResponseRows();
+      }
+
+      System.out.println("All reader threads finished after reading " + numTotalResponseRows + " rows; exiting");
     }
   }
 }
