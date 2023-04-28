@@ -1,3 +1,4 @@
+import com.google.api.gax.grpc.ChannelPoolSettings;
 import com.google.api.gax.grpc.InstantiatingGrpcChannelProvider;
 import com.google.api.gax.rpc.FixedHeaderProvider;
 import com.google.cloud.bigquery.storage.v1.BigQueryReadClient;
@@ -81,6 +82,13 @@ public class BigQueryStorageSampler {
             .hasArg()
             .type(Float.class)
             .build());
+    parseOptions.addOption(
+        Option.builder()
+            .longOpt("max_rpcs_per_channel")
+            .desc("The maximum number of RPCs per gRPC sub-channel")
+            .hasArg()
+            .type(Integer.class)
+            .build());
     return parseOptions;
   }
 
@@ -157,6 +165,7 @@ public class BigQueryStorageSampler {
     final Optional<String> endpoint;
     final Optional<String> protocol;
     final Optional<Float> channelsPerCpu;
+    final Optional<Integer> maxRpcsPerChannel;
     final Optional<BigQueryReadClient> client;
 
     long numResponses = 0;
@@ -172,11 +181,13 @@ public class BigQueryStorageSampler {
         ReadStream readStream,
         Optional<String> endpoint,
         Optional<String> protocol,
-        Optional<Float> channelsPerCpu) {
+        Optional<Float> channelsPerCpu,
+        Optional<Integer> maxRpcsPerChannel) {
       this.readStream = readStream;
       this.endpoint = endpoint;
       this.protocol = protocol;
       this.channelsPerCpu = channelsPerCpu;
+      this.maxRpcsPerChannel = maxRpcsPerChannel;
       this.client = Optional.empty();
     }
 
@@ -185,6 +196,7 @@ public class BigQueryStorageSampler {
       this.endpoint = Optional.empty();
       this.protocol = Optional.empty();
       this.channelsPerCpu = Optional.empty();
+      this.maxRpcsPerChannel = Optional.empty();
       this.client = Optional.of(client);
     }
 
@@ -202,7 +214,7 @@ public class BigQueryStorageSampler {
           ReadRowsRequest.newBuilder().setReadStream(readStream.getName()).build();
 
       try (BigQueryReadClient client =
-              this.client.orElse(getClient(endpoint, protocol, channelsPerCpu))) {
+              this.client.orElse(getClient(endpoint, protocol, channelsPerCpu, maxRpcsPerChannel))) {
         Stopwatch stopwatch = Stopwatch.createStarted();
         for (ReadRowsResponse response : client.readRowsCallable().call(readRowsRequest)) {
           numResponses++;
@@ -250,17 +262,20 @@ public class BigQueryStorageSampler {
   private static BigQueryReadClient getClient(
       Optional<String> endpoint,
       Optional<String> protocol,
-      Optional<Float> channelsPerCpu)
+      Optional<Float> channelsPerCpu,
+      Optional<Integer> maxRpcsPerChannel)
       throws Exception {
     BigQueryReadSettings.Builder builder = BigQueryReadSettings.newBuilder();
     endpoint.ifPresent(s -> builder.setEndpoint(s + ":443"));
     protocol.ifPresent(s -> builder.setHeaderProvider(
         FixedHeaderProvider.create("x-bigquerystorage-transport-protocol", s)));
-    channelsPerCpu.ifPresent(s -> builder.getStubSettingsBuilder().setTransportChannelProvider(
+    InstantiatingGrpcChannelProvider.Builder channelProviderBuilder =
         InstantiatingGrpcChannelProvider.newBuilder()
-            .setMaxInboundMessageSize(Integer.MAX_VALUE)
-            .setChannelsPerCpu(s)
-            .build()));
+            .setMaxInboundMessageSize(Integer.MAX_VALUE);
+    channelsPerCpu.ifPresent(channelProviderBuilder::setChannelsPerCpu);
+    maxRpcsPerChannel.ifPresent(s -> channelProviderBuilder.setChannelPoolSettings(
+        ChannelPoolSettings.builder().setMaxRpcsPerChannel(s).build()));
+    builder.setTransportChannelProvider(channelProviderBuilder.build());
     return BigQueryReadClient.create(builder.build());
   }
 
@@ -284,6 +299,10 @@ public class BigQueryStorageSampler {
         commandLine.hasOption("channels_per_cpu")
             ? Optional.of(Float.parseFloat(commandLine.getOptionValue("channels_per_cpu")))
             : Optional.empty();
+    Optional<Integer> maxRpcsPerChannel =
+        commandLine.hasOption("max_rpcs_per_channel")
+            ? Optional.of(Integer.parseInt(commandLine.getOptionValue("max_rpcs_per_channel")))
+            : Optional.empty();
 
     System.out.println("Table: " + tableReference.toResourceName());
     System.out.println("Parent: " + parentProjectReference.toResourceName());
@@ -301,7 +320,7 @@ public class BigQueryStorageSampler {
 
     ReadSession readSession;
     long elapsedMillis;
-    try (BigQueryReadClient client = getClient(endpoint, protocol, channelsPerCpu)) {
+    try (BigQueryReadClient client = getClient(endpoint, protocol, channelsPerCpu, maxRpcsPerChannel)) {
       Stopwatch stopwatch = Stopwatch.createStarted();
       readSession = client.createReadSession(createReadSessionRequest);
       stopwatch.stop();
@@ -317,7 +336,7 @@ public class BigQueryStorageSampler {
         readerThreads.add(
             shareClient
                 ? new ReaderThread(readStream, client)
-                : new ReaderThread(readStream, endpoint, protocol, channelsPerCpu));
+                : new ReaderThread(readStream, endpoint, protocol, channelsPerCpu, maxRpcsPerChannel));
       }
 
       for (ReaderThread readerThread : readerThreads) {
