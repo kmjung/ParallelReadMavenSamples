@@ -8,76 +8,15 @@ import com.google.cloud.bigquery.storage.v1.ReadRowsResponse;
 import com.google.cloud.bigquery.storage.v1.ReadSession;
 import com.google.cloud.bigquery.storage.v1.ReadStream;
 import com.google.common.base.Stopwatch;
+
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.apache.commons.cli.CommandLine;
-import org.apache.commons.cli.CommandLineParser;
-import org.apache.commons.cli.DefaultParser;
-import org.apache.commons.cli.Option;
-import org.apache.commons.cli.Options;
 
 public class BigQueryStorageSampler {
-
-  static Options getParseOptions() {
-    Options parseOptions = new Options();
-    parseOptions.addOption(
-        Option.builder("p")
-            .longOpt("parent")
-            .desc("The ID of the parent project for the read session")
-            .required()
-            .hasArg()
-            .type(String.class)
-            .build());
-    parseOptions.addOption(
-        Option.builder("t")
-            .longOpt("table")
-            .desc("The fully-qualified ID of the table to read from")
-            .required()
-            .hasArg()
-            .type(String.class)
-            .build());
-    parseOptions.addOption(
-        Option.builder("f")
-            .longOpt("format")
-            .desc("The format of the data (Avro or Arrow)")
-            .required()
-            .hasArg()
-            .type(String.class)
-            .build());
-    parseOptions.addOption(
-        Option.builder("s")
-            .longOpt("streams")
-            .desc("The number of streams to request during session creation")
-            .hasArg()
-            .type(Integer.class)
-            .build());
-    parseOptions.addOption(
-        Option.builder()
-            .longOpt("endpoint")
-            .desc("The read API endpoint for the operation")
-            .hasArg()
-            .type(String.class)
-            .build());
-    parseOptions.addOption(
-        Option.builder()
-            .longOpt("channels_per_cpu")
-            .desc("The number of channels to configure per CPU in GAPIC")
-            .hasArg()
-            .type(Float.class)
-            .build());
-    parseOptions.addOption(
-        Option.builder()
-            .longOpt("max_rpcs_per_channel")
-            .desc("The maximum number of RPCs per gRPC sub-channel")
-            .hasArg()
-            .type(Integer.class)
-            .build());
-    return parseOptions;
-  }
 
   private static class TableReference {
 
@@ -219,62 +158,55 @@ public class BigQueryStorageSampler {
     private long getNumTotalResponseRows() { return numTotalResponseRows; }
   }
 
-  private static BigQueryReadClient getClient(
-      Optional<String> endpoint,
-      Optional<Float> channelsPerCpu,
-      Optional<Integer> maxRpcsPerChannel)
-      throws Exception {
-    BigQueryReadSettings.Builder builder = BigQueryReadSettings.newBuilder();
-    endpoint.ifPresent(s -> builder.setEndpoint(s + ":443"));
+  private static BigQueryReadClient getClient(BigQueryStorageSamplerOptions options) throws IOException {
+    ChannelPoolSettings.Builder channelPoolSettingsBuilder = ChannelPoolSettings.builder();
+    options.getChannelPoolOptions().getMinChannelCount().ifPresent(channelPoolSettingsBuilder::setMinChannelCount);
+    options.getChannelPoolOptions().getMaxChannelCount().ifPresent(channelPoolSettingsBuilder::setMaxChannelCount);
+    options.getChannelPoolOptions().getMinRpcsPerChannel().ifPresent(channelPoolSettingsBuilder::setMinRpcsPerChannel);
+    options.getChannelPoolOptions().getMaxRpcsPerChannel().ifPresent(channelPoolSettingsBuilder::setMaxRpcsPerChannel);
+    options.getChannelPoolOptions().getInitialChannelCount().ifPresent(
+        channelPoolSettingsBuilder::setInitialChannelCount);
+
+    // TODO(kmj): Can we fetch this directly from the stub settings rather than copying it?
     InstantiatingGrpcChannelProvider.Builder channelProviderBuilder =
         InstantiatingGrpcChannelProvider.newBuilder()
-            .setMaxInboundMessageSize(Integer.MAX_VALUE);
-    channelsPerCpu.ifPresent(channelProviderBuilder::setChannelsPerCpu);
-    maxRpcsPerChannel.ifPresent(s -> channelProviderBuilder.setChannelPoolSettings(
-        ChannelPoolSettings.builder().setMaxRpcsPerChannel(s).build()));
-    builder.setTransportChannelProvider(channelProviderBuilder.build());
-    return BigQueryReadClient.create(builder.build());
+            .setMaxInboundMessageSize(Integer.MAX_VALUE)
+            .setChannelPoolSettings(channelPoolSettingsBuilder.build());
+
+    // Note: this setter method overrides the channel pool settings specified above.
+    options.getChannelsPerCpu().ifPresent(channelProviderBuilder::setChannelsPerCpu);
+
+    BigQueryReadSettings.Builder settingsBuilder =
+        BigQueryReadSettings.newBuilder()
+            .setTransportChannelProvider(channelProviderBuilder.build());
+    options.getEndpoint().ifPresent(settingsBuilder::setEndpoint);
+
+    return BigQueryReadClient.create(settingsBuilder.build());
   }
 
   public static void main(String[] args) throws Exception {
-    CommandLineParser parser = new DefaultParser();
-    CommandLine commandLine = parser.parse(getParseOptions(), args);
+    BigQueryStorageSamplerOptions options = new BigQueryStorageSamplerOptions(args);
 
-    TableReference tableReference =
-        TableReference.parseFromString(commandLine.getOptionValue("table"));
-    ProjectReference parentProjectReference =
-        ProjectReference.parseFromString(commandLine.getOptionValue("parent"));
-    DataFormat dataFormat =
-        DataFormat.parseFromString(commandLine.getOptionValue("format"));
-    int streams = Integer.parseInt(commandLine.getOptionValue("streams", "1"));
-    Optional<String> endpoint =
-        Optional.ofNullable(commandLine.getOptionValue("endpoint"));
-    Optional<Float> channelsPerCpu =
-        commandLine.hasOption("channels_per_cpu")
-            ? Optional.of(Float.parseFloat(commandLine.getOptionValue("channels_per_cpu")))
-            : Optional.empty();
-    Optional<Integer> maxRpcsPerChannel =
-        commandLine.hasOption("max_rpcs_per_channel")
-            ? Optional.of(Integer.parseInt(commandLine.getOptionValue("max_rpcs_per_channel")))
-            : Optional.empty();
-
-    System.out.println("Table: " + tableReference.toResourceName());
-    System.out.println("Parent: " + parentProjectReference.toResourceName());
-    System.out.println("Data format: " + commandLine.getOptionValue("format"));
+    System.out.println("Parent project: " + options.getParent());
+    System.out.println("Table: " + options.getTable());
+    System.out.println("Data format: " + options.getFormat());
 
     CreateReadSessionRequest createReadSessionRequest =
         CreateReadSessionRequest.newBuilder()
-            .setParent(parentProjectReference.toResourceName())
+            .setParent(
+                ProjectReference.parseFromString(options.getParent()).toResourceName())
             .setReadSession(
                 ReadSession.newBuilder()
-                    .setTable(tableReference.toResourceName())
-                    .setDataFormat(dataFormat.toProto()))
-            .setMaxStreamCount(streams)
+                    .setTable(
+                        TableReference.parseFromString(options.getTable()).toResourceName())
+                    .setDataFormat(
+                        DataFormat.parseFromString(options.getFormat()).toProto()))
+            .setMaxStreamCount(options.getMaxStreams())
             .build();
 
     ReadSession readSession;
     long elapsedMillis;
-    try (BigQueryReadClient client = getClient(endpoint, channelsPerCpu, maxRpcsPerChannel)) {
+    try (BigQueryReadClient client = getClient(options)) {
       Stopwatch stopwatch = Stopwatch.createStarted();
       readSession = client.createReadSession(createReadSessionRequest);
       stopwatch.stop();
