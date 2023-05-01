@@ -72,11 +72,6 @@ public class BigQueryStorageSampler {
             .build());
     parseOptions.addOption(
         Option.builder()
-            .longOpt("share_client")
-            .desc("Whether reader threads should share a single client instance")
-            .build());
-    parseOptions.addOption(
-        Option.builder()
             .longOpt("channels_per_cpu")
             .desc("The number of channels to configure per CPU in GAPIC")
             .hasArg()
@@ -162,11 +157,7 @@ public class BigQueryStorageSampler {
   static class ReaderThread extends Thread {
 
     final ReadStream readStream;
-    final Optional<String> endpoint;
-    final Optional<String> protocol;
-    final Optional<Float> channelsPerCpu;
-    final Optional<Integer> maxRpcsPerChannel;
-    final Optional<BigQueryReadClient> client;
+    final BigQueryReadClient client;
 
     long numResponses = 0;
     long numResponseBytes = 0;
@@ -177,27 +168,9 @@ public class BigQueryStorageSampler {
     long numtotalResponseBytes = 0;
     long numTotalResponseRows = 0;
 
-    public ReaderThread(
-        ReadStream readStream,
-        Optional<String> endpoint,
-        Optional<String> protocol,
-        Optional<Float> channelsPerCpu,
-        Optional<Integer> maxRpcsPerChannel) {
-      this.readStream = readStream;
-      this.endpoint = endpoint;
-      this.protocol = protocol;
-      this.channelsPerCpu = channelsPerCpu;
-      this.maxRpcsPerChannel = maxRpcsPerChannel;
-      this.client = Optional.empty();
-    }
-
     public ReaderThread(ReadStream readStream, BigQueryReadClient client) {
       this.readStream = readStream;
-      this.endpoint = Optional.empty();
-      this.protocol = Optional.empty();
-      this.channelsPerCpu = Optional.empty();
-      this.maxRpcsPerChannel = Optional.empty();
-      this.client = Optional.of(client);
+      this.client = client;
     }
 
     public void run() {
@@ -209,28 +182,23 @@ public class BigQueryStorageSampler {
     }
 
     private void readRows() throws Exception {
-
       ReadRowsRequest readRowsRequest =
           ReadRowsRequest.newBuilder().setReadStream(readStream.getName()).build();
+      Stopwatch stopwatch = Stopwatch.createStarted();
+      for (ReadRowsResponse response : client.readRowsCallable().call(readRowsRequest)) {
+        numResponses++;
+        numResponseBytes += response.getSerializedSize();
+        numResponseRows += response.getRowCount();
+        printPeriodicUpdate(stopwatch.elapsed(TimeUnit.MICROSECONDS));
 
-      try (BigQueryReadClient client =
-              this.client.orElse(getClient(endpoint, protocol, channelsPerCpu, maxRpcsPerChannel))) {
-        Stopwatch stopwatch = Stopwatch.createStarted();
-        for (ReadRowsResponse response : client.readRowsCallable().call(readRowsRequest)) {
-          numResponses++;
-          numResponseBytes += response.getSerializedSize();
-          numResponseRows += response.getRowCount();
-          printPeriodicUpdate(stopwatch.elapsed(TimeUnit.MICROSECONDS));
-
-          // This is just a simple end-to-end throughput test, so we don't decode the Avro record
-          // block or Arrow record batch here. This may well have an impact on throughput in a
-          // normal use case!
-        }
-
-        stopwatch.stop();
-        updateCumulativeStatistics();
-        System.out.println("Finished reading from stream " + readStream.getName());
+        // This is just a simple end-to-end throughput test, so we don't decode the Avro record
+        // block or Arrow record batch here. This may well have an impact on throughput in a
+        // normal use case!
       }
+
+      stopwatch.stop();
+      updateCumulativeStatistics();
+      System.out.println("Finished reading from stream " + readStream.getName());
     }
 
     private void printPeriodicUpdate(long elapsedMicros) {
@@ -238,10 +206,10 @@ public class BigQueryStorageSampler {
         return;
       }
 
-      System.out.println(String.format(
-          "Received %d responses (%d rows) from stream %s in 10s (%f MiB/s)",
+      System.out.printf(
+          "Received %d responses (%d rows) from stream %s in 10s (%f MiB/s)%n",
           numResponses, numResponseRows, readStream.getName(),
-          (double) numResponseBytes / (1024 * 1024 * 10)));
+          (double) numResponseBytes / (1024 * 1024 * 10));
 
       updateCumulativeStatistics();
       lastReportTimeMicros = elapsedMicros;
@@ -294,7 +262,6 @@ public class BigQueryStorageSampler {
         Optional.ofNullable(commandLine.getOptionValue("endpoint"));
     Optional<String> protocol =
         Optional.ofNullable(commandLine.getOptionValue("protocol"));
-    boolean shareClient = commandLine.hasOption("share_client");
     Optional<Float> channelsPerCpu =
         commandLine.hasOption("channels_per_cpu")
             ? Optional.of(Float.parseFloat(commandLine.getOptionValue("channels_per_cpu")))
@@ -333,10 +300,7 @@ public class BigQueryStorageSampler {
       List<ReaderThread> readerThreads = new ArrayList<>(readSession.getStreamsCount());
       for (ReadStream readStream : readSession.getStreamsList()) {
         System.out.println("Creating a reader thread for stream " + readStream.getName());
-        readerThreads.add(
-            shareClient
-                ? new ReaderThread(readStream, client)
-                : new ReaderThread(readStream, endpoint, protocol, channelsPerCpu, maxRpcsPerChannel));
+        readerThreads.add(new ReaderThread(readStream, client));
       }
 
       for (ReaderThread readerThread : readerThreads) {
