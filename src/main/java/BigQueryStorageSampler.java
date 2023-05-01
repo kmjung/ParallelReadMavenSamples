@@ -65,13 +65,6 @@ public class BigQueryStorageSampler {
             .build());
     parseOptions.addOption(
         Option.builder()
-            .longOpt("protocol")
-            .desc("The transport protocol to use for the ReadRows call")
-            .hasArg()
-            .type(String.class)
-            .build());
-    parseOptions.addOption(
-        Option.builder()
             .longOpt("channels_per_cpu")
             .desc("The number of channels to configure per CPU in GAPIC")
             .hasArg()
@@ -229,14 +222,11 @@ public class BigQueryStorageSampler {
 
   private static BigQueryReadClient getClient(
       Optional<String> endpoint,
-      Optional<String> protocol,
       Optional<Float> channelsPerCpu,
       Optional<Integer> maxRpcsPerChannel)
       throws Exception {
     BigQueryReadSettings.Builder builder = BigQueryReadSettings.newBuilder();
     endpoint.ifPresent(s -> builder.setEndpoint(s + ":443"));
-    protocol.ifPresent(s -> builder.setHeaderProvider(
-        FixedHeaderProvider.create("x-bigquerystorage-transport-protocol", s)));
     InstantiatingGrpcChannelProvider.Builder channelProviderBuilder =
         InstantiatingGrpcChannelProvider.newBuilder()
             .setMaxInboundMessageSize(Integer.MAX_VALUE);
@@ -260,8 +250,6 @@ public class BigQueryStorageSampler {
     int streams = Integer.parseInt(commandLine.getOptionValue("streams", "1"));
     Optional<String> endpoint =
         Optional.ofNullable(commandLine.getOptionValue("endpoint"));
-    Optional<String> protocol =
-        Optional.ofNullable(commandLine.getOptionValue("protocol"));
     Optional<Float> channelsPerCpu =
         commandLine.hasOption("channels_per_cpu")
             ? Optional.of(Float.parseFloat(commandLine.getOptionValue("channels_per_cpu")))
@@ -287,7 +275,7 @@ public class BigQueryStorageSampler {
 
     ReadSession readSession;
     long elapsedMillis;
-    try (BigQueryReadClient client = getClient(endpoint, protocol, channelsPerCpu, maxRpcsPerChannel)) {
+    try (BigQueryReadClient client = getClient(endpoint, channelsPerCpu, maxRpcsPerChannel)) {
       Stopwatch stopwatch = Stopwatch.createStarted();
       readSession = client.createReadSession(createReadSessionRequest);
       stopwatch.stop();
