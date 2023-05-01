@@ -1,6 +1,5 @@
 import com.google.api.gax.grpc.ChannelPoolSettings;
 import com.google.api.gax.grpc.InstantiatingGrpcChannelProvider;
-import com.google.api.gax.rpc.FixedHeaderProvider;
 import com.google.cloud.bigquery.storage.v1.BigQueryReadClient;
 import com.google.cloud.bigquery.storage.v1.BigQueryReadSettings;
 import com.google.cloud.bigquery.storage.v1.CreateReadSessionRequest;
@@ -158,7 +157,7 @@ public class BigQueryStorageSampler {
     long lastReportTimeMicros = 0;
 
     long numTotalResponses = 0;
-    long numtotalResponseBytes = 0;
+    long numTotalResponseBytes = 0;
     long numTotalResponseRows = 0;
 
     public ReaderThread(ReadStream readStream, BigQueryReadClient client) {
@@ -211,7 +210,7 @@ public class BigQueryStorageSampler {
     private void updateCumulativeStatistics() {
       numTotalResponses += numResponses;
       numResponses = 0;
-      numtotalResponseBytes += numResponseBytes;
+      numTotalResponseBytes += numResponseBytes;
       numResponseBytes = 0;
       numTotalResponseRows += numResponseRows;
       numResponseRows = 0;
