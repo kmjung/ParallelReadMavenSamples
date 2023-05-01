@@ -63,6 +63,7 @@ public class BigQueryStorageSamplerOptions {
   public static final String MAX_STREAMS_OPT = "max_streams";
   public static final String ENDPOINT_OPT = "endpoint";
   public static final String CHANNELS_PER_CPU_OPT = "channels_per_cpu";
+  public static final String EXECUTOR_THREAD_COUNT_OPT = "executor_thread_count";
 
   private String parent;
   private String table;
@@ -71,6 +72,7 @@ public class BigQueryStorageSamplerOptions {
   private Optional<String> endpoint;
   private Optional<Float> channelsPerCpu;
   private ChannelPoolOptions channelPoolOptions;
+  private Optional<Integer> executorThreadCount;
 
   public BigQueryStorageSamplerOptions(String[] args) {
     try {
@@ -164,6 +166,13 @@ public class BigQueryStorageSamplerOptions {
             .hasArg()
             .type(Integer.class)
             .build());
+    parseOptions.addOption(
+        Option.builder()
+            .longOpt(EXECUTOR_THREAD_COUNT_OPT)
+            .desc("The (fixed) number of threads to create in the executor pool")
+            .hasArg()
+            .type(Integer.class)
+            .build());
     return parseOptions;
   }
 
@@ -178,6 +187,10 @@ public class BigQueryStorageSamplerOptions {
             ? Optional.of(Float.parseFloat(commandLine.getOptionValue(CHANNELS_PER_CPU_OPT)))
             : Optional.empty();
     this.channelPoolOptions = new ChannelPoolOptions(commandLine);
+    this.executorThreadCount =
+        commandLine.hasOption(EXECUTOR_THREAD_COUNT_OPT)
+            ? Optional.of(Integer.parseInt(commandLine.getOptionValue(EXECUTOR_THREAD_COUNT_OPT)))
+            : Optional.empty();
   }
 
   public String getParent() {
@@ -206,5 +219,9 @@ public class BigQueryStorageSamplerOptions {
 
   public ChannelPoolOptions getChannelPoolOptions() {
     return this.channelPoolOptions;
+  }
+
+  public Optional<Integer> getExecutorThreadCount() {
+    return this.executorThreadCount;
   }
 }

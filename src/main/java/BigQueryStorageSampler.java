@@ -1,3 +1,4 @@
+import com.google.api.gax.core.InstantiatingExecutorProvider;
 import com.google.api.gax.grpc.ChannelPoolSettings;
 import com.google.api.gax.grpc.InstantiatingGrpcChannelProvider;
 import com.google.cloud.bigquery.storage.v1.BigQueryReadClient;
@@ -155,7 +156,9 @@ public class BigQueryStorageSampler {
       numResponseRows = 0;
     }
 
-    private long getNumTotalResponseRows() { return numTotalResponseRows; }
+    private long getNumTotalResponseRows() {
+      return numTotalResponseRows;
+    }
   }
 
   private static BigQueryReadClient getClient(BigQueryStorageSamplerOptions options) throws IOException {
@@ -179,7 +182,10 @@ public class BigQueryStorageSampler {
     BigQueryReadSettings.Builder settingsBuilder =
         BigQueryReadSettings.newBuilder()
             .setTransportChannelProvider(channelProviderBuilder.build());
+
     options.getEndpoint().ifPresent(settingsBuilder::setEndpoint);
+    options.getExecutorThreadCount().ifPresent(s -> settingsBuilder.setBackgroundExecutorProvider(
+        InstantiatingExecutorProvider.newBuilder().setExecutorThreadCount(s).build()));
 
     return BigQueryReadClient.create(settingsBuilder.build());
   }
