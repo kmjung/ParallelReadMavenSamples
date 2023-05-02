@@ -184,8 +184,10 @@ public class BigQueryStorageSampler {
     options.getFlowControlWindowSize().ifPresent(s -> channelProviderBuilder.setChannelConfigurator(
         (ManagedChannelBuilder channelBuilder) -> {
           if (channelBuilder instanceof NettyChannelBuilder) {
+            System.out.println("Setting flow control window size to " + s);
             return ((NettyChannelBuilder) channelBuilder).flowControlWindow(s);
           } else {
+            System.err.println("Failed to set flow control window size!");
             return channelBuilder;
           }
         }));
