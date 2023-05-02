@@ -64,6 +64,7 @@ public class BigQueryStorageSamplerOptions {
   public static final String ENDPOINT_OPT = "endpoint";
   public static final String CHANNELS_PER_CPU_OPT = "channels_per_cpu";
   public static final String EXECUTOR_THREAD_COUNT_OPT = "executor_thread_count";
+  public static final String FLOW_CONTROL_WINDOW_SIZE_OPT = "flow_control_window_size";
 
   private String parent;
   private String table;
@@ -73,6 +74,7 @@ public class BigQueryStorageSamplerOptions {
   private Optional<Float> channelsPerCpu;
   private ChannelPoolOptions channelPoolOptions;
   private Optional<Integer> executorThreadCount;
+  private Optional<Integer> flowControlWindowSize;
 
   public BigQueryStorageSamplerOptions(String[] args) {
     try {
@@ -173,6 +175,13 @@ public class BigQueryStorageSamplerOptions {
             .hasArg()
             .type(Integer.class)
             .build());
+    parseOptions.addOption(
+        Option.builder()
+            .longOpt(FLOW_CONTROL_WINDOW_SIZE_OPT)
+            .desc("The size of the initial gRPC flow control window")
+            .hasArg()
+            .type(Integer.class)
+            .build());
     return parseOptions;
   }
 
@@ -190,6 +199,10 @@ public class BigQueryStorageSamplerOptions {
     this.executorThreadCount =
         commandLine.hasOption(EXECUTOR_THREAD_COUNT_OPT)
             ? Optional.of(Integer.parseInt(commandLine.getOptionValue(EXECUTOR_THREAD_COUNT_OPT)))
+            : Optional.empty();
+    this.flowControlWindowSize =
+        commandLine.hasOption(FLOW_CONTROL_WINDOW_SIZE_OPT)
+            ? Optional.of(Integer.parseInt(commandLine.getOptionValue(FLOW_CONTROL_WINDOW_SIZE_OPT)))
             : Optional.empty();
   }
 
@@ -223,5 +236,9 @@ public class BigQueryStorageSamplerOptions {
 
   public Optional<Integer> getExecutorThreadCount() {
     return this.executorThreadCount;
+  }
+
+  public Optional<Integer> getFlowControlWindowSize() {
+    return this.flowControlWindowSize;
   }
 }

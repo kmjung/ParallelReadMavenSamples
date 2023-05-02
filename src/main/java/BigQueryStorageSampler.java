@@ -9,6 +9,8 @@ import com.google.cloud.bigquery.storage.v1.ReadRowsResponse;
 import com.google.cloud.bigquery.storage.v1.ReadSession;
 import com.google.cloud.bigquery.storage.v1.ReadStream;
 import com.google.common.base.Stopwatch;
+import io.grpc.ManagedChannelBuilder;
+import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -178,6 +180,15 @@ public class BigQueryStorageSampler {
 
     // Note: this setter method overrides the channel pool settings specified above.
     options.getChannelsPerCpu().ifPresent(channelProviderBuilder::setChannelsPerCpu);
+
+    options.getFlowControlWindowSize().ifPresent(s -> channelProviderBuilder.setChannelConfigurator(
+        (ManagedChannelBuilder channelBuilder) -> {
+          if (channelBuilder instanceof NettyChannelBuilder) {
+            return ((NettyChannelBuilder) channelBuilder).flowControlWindow(s);
+          } else {
+            return channelBuilder;
+          }
+        }));
 
     BigQueryReadSettings.Builder settingsBuilder =
         BigQueryReadSettings.newBuilder()
