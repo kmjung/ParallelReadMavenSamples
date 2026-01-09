@@ -14,6 +14,7 @@ import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -203,6 +204,26 @@ public class BigQueryStorageSampler {
     return BigQueryReadClient.create(settingsBuilder.build());
   }
 
+  private static CreateReadSessionRequest getCreateRequest(BigQueryStorageSamplerOptions options) throws Exception {
+    if (options.getSerializedProto().isPresent()) {
+      return CreateReadSessionRequest.parseFrom(
+          Base64.getDecoder().decode(options.getSerializedProto().get()));
+    }
+
+    return CreateReadSessionRequest.newBuilder()
+        .setParent(
+            ProjectReference.parseFromString(options.getParent()).toResourceName())
+        .setReadSession(
+            ReadSession.newBuilder()
+                .setTable(
+                    TableReference.parseFromString(options.getTable()).toResourceName())
+                .setDataFormat(
+                    DataFormat.parseFromString(options.getFormat()).toProto())
+                .build())
+        .setMaxStreamCount(options.getMaxStreams())
+        .build();
+  }
+
   public static void main(String[] args) throws Exception {
     BigQueryStorageSamplerOptions options = new BigQueryStorageSamplerOptions(args);
 
@@ -210,24 +231,15 @@ public class BigQueryStorageSampler {
     System.out.println("Table: " + options.getTable());
     System.out.println("Data format: " + options.getFormat());
 
-    CreateReadSessionRequest createReadSessionRequest =
-        CreateReadSessionRequest.newBuilder()
-            .setParent(
-                ProjectReference.parseFromString(options.getParent()).toResourceName())
-            .setReadSession(
-                ReadSession.newBuilder()
-                    .setTable(
-                        TableReference.parseFromString(options.getTable()).toResourceName())
-                    .setDataFormat(
-                        DataFormat.parseFromString(options.getFormat()).toProto()))
-            .setMaxStreamCount(options.getMaxStreams())
-            .build();
+    CreateReadSessionRequest request = getCreateRequest(options);
+
+    System.out.println("CreateReadSessionRequest: " + request);
 
     ReadSession readSession;
     long elapsedMillis;
     try (BigQueryReadClient client = getClient(options)) {
       Stopwatch stopwatch = Stopwatch.createStarted();
-      readSession = client.createReadSession(createReadSessionRequest);
+      readSession = client.createReadSession(request);
       stopwatch.stop();
       elapsedMillis = stopwatch.elapsed(TimeUnit.MILLISECONDS);
 

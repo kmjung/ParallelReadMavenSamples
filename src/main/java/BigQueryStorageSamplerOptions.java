@@ -65,6 +65,7 @@ public class BigQueryStorageSamplerOptions {
   public static final String CHANNELS_PER_CPU_OPT = "channels_per_cpu";
   public static final String EXECUTOR_THREAD_COUNT_OPT = "executor_thread_count";
   public static final String FLOW_CONTROL_WINDOW_SIZE_OPT = "flow_control_window_size";
+  public static final String SERIALIZED_PROTO_OPT = "serialized_proto";
 
   private String parent;
   private String table;
@@ -75,6 +76,7 @@ public class BigQueryStorageSamplerOptions {
   private ChannelPoolOptions channelPoolOptions;
   private Optional<Integer> executorThreadCount;
   private Optional<Integer> flowControlWindowSize;
+  private Optional<String> serializedProto;
 
   public BigQueryStorageSamplerOptions(String[] args) {
     try {
@@ -182,6 +184,13 @@ public class BigQueryStorageSamplerOptions {
             .hasArg()
             .type(Integer.class)
             .build());
+    parseOptions.addOption(
+        Option.builder()
+            .longOpt(SERIALIZED_PROTO_OPT)
+            .desc("Base64-encoded CreateReadSessionRequest proto")
+            .hasArg()
+            .type(String.class)
+            .build());
     return parseOptions;
   }
 
@@ -204,6 +213,7 @@ public class BigQueryStorageSamplerOptions {
         commandLine.hasOption(FLOW_CONTROL_WINDOW_SIZE_OPT)
             ? Optional.of(Integer.parseInt(commandLine.getOptionValue(FLOW_CONTROL_WINDOW_SIZE_OPT)))
             : Optional.empty();
+    this.serializedProto = Optional.ofNullable(commandLine.getOptionValue(SERIALIZED_PROTO_OPT));
   }
 
   public String getParent() {
@@ -240,5 +250,9 @@ public class BigQueryStorageSamplerOptions {
 
   public Optional<Integer> getFlowControlWindowSize() {
     return this.flowControlWindowSize;
+  }
+
+  public Optional<String> getSerializedProto() {
+    return this.serializedProto;
   }
 }
