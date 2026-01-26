@@ -130,21 +130,21 @@ public class BigQueryStorageSampler {
         numResponseRows += response.getRowCount();
         printPeriodicUpdate(stopwatch.elapsed(TimeUnit.MICROSECONDS));
 
-        // The schema is only sent in the first response.
         if (response.hasAvroSchema()) {
+          // The schema is only sent in the first response.
           if (avroSchema == null) {
             avroSchema = new Schema.Parser().parse(response.getAvroSchema().getSchema());
             datumReader = new GenericDatumReader<>(avroSchema);
           }
-        }
 
-        if (datumReader != null && response.hasAvroRows()) {
-          BinaryDecoder decoder = DecoderFactory.get()
-              .binaryDecoder(
-                  response.getAvroRows().getSerializedBinaryRows().toByteArray(), null);
-          while (!decoder.isEnd()) {
-            GenericRecord record = datumReader.read(null, decoder);
-            System.out.println(record.toString());
+          if (datumReader != null && response.hasAvroRows()) {
+            BinaryDecoder decoder = DecoderFactory.get()
+                .binaryDecoder(
+                    response.getAvroRows().getSerializedBinaryRows().toByteArray(), null);
+            while (!decoder.isEnd()) {
+              GenericRecord record = datumReader.read(null, decoder);
+              System.out.println(record.toString());
+            }
           }
         }
       }
