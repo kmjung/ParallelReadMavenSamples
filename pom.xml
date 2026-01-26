@@ -68,5 +68,22 @@
       <artifactId>avro</artifactId>
       <version>1.11.5</version>
     </dependency>
+    <!-- Source: https://mvnrepository.com/artifact/org.apache.arrow/arrow-memory -->
+    <dependency>
+      <groupId>org.apache.arrow</groupId>
+      <artifactId>arrow-memory-core</artifactId>
+      <version>18.3.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.arrow</groupId>
+      <artifactId>arrow-memory-netty</artifactId>
+      <version>18.3.0</version>
+    </dependency>
+    <!-- Source: https://mvnrepository.com/artifact/org.apache.arrow/arrow-vector -->
+    <dependency>
+      <groupId>org.apache.arrow</groupId>
+      <artifactId>arrow-vector</artifactId>
+      <version>18.3.0</version>
+    </dependency>
   </dependencies>
 </project>
