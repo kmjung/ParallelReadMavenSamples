@@ -11,20 +11,23 @@ import com.google.cloud.bigquery.storage.v1.ReadStream;
 import com.google.common.base.Stopwatch;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericDatumReader;
+import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.io.BinaryDecoder;
+import org.apache.avro.io.DecoderFactory;
 
 public class BigQueryStorageSampler {
 
   private static class TableReference {
 
-    static Pattern tableReferencePattern =
-        Pattern.compile("([\\w\\-]+)[\\:\\.]([^\\:\\.]+)\\.([^\\:\\.]+)");
+    static Pattern tableReferencePattern = Pattern.compile("([\\w\\-]+)[\\:\\.]([^\\:\\.]+)\\.([^\\:\\.]+)");
 
     static TableReference parseFromString(String table) {
       Matcher m = tableReferencePattern.matcher(table);
@@ -102,6 +105,9 @@ public class BigQueryStorageSampler {
     long numTotalResponseBytes = 0;
     long numTotalResponseRows = 0;
 
+    private Schema avroSchema;
+    private GenericDatumReader<GenericRecord> datumReader;
+
     public ReaderThread(ReadStream readStream, BigQueryReadClient client) {
       this.readStream = readStream;
       this.client = client;
@@ -116,8 +122,7 @@ public class BigQueryStorageSampler {
     }
 
     private void readRows() throws Exception {
-      ReadRowsRequest readRowsRequest =
-          ReadRowsRequest.newBuilder().setReadStream(readStream.getName()).build();
+      ReadRowsRequest readRowsRequest = ReadRowsRequest.newBuilder().setReadStream(readStream.getName()).build();
       Stopwatch stopwatch = Stopwatch.createStarted();
       for (ReadRowsResponse response : client.readRowsCallable().call(readRowsRequest)) {
         numResponses++;
@@ -125,9 +130,23 @@ public class BigQueryStorageSampler {
         numResponseRows += response.getRowCount();
         printPeriodicUpdate(stopwatch.elapsed(TimeUnit.MICROSECONDS));
 
-        // This is just a simple end-to-end throughput test, so we don't decode the Avro record
-        // block or Arrow record batch here. This may well have an impact on throughput in a
-        // normal use case!
+        // The schema is only sent in the first response.
+        if (response.hasAvroSchema()) {
+          if (avroSchema == null) {
+            avroSchema = new Schema.Parser().parse(response.getAvroSchema().getSchema());
+            datumReader = new GenericDatumReader<>(avroSchema);
+          }
+        }
+
+        if (datumReader != null && response.hasAvroRows()) {
+          BinaryDecoder decoder = DecoderFactory.get()
+              .binaryDecoder(
+                  response.getAvroRows().getSerializedBinaryRows().toByteArray(), null);
+          while (!decoder.isEnd()) {
+            GenericRecord record = datumReader.read(null, decoder);
+            System.out.println(record.toString());
+          }
+        }
       }
 
       stopwatch.stop();
@@ -172,11 +191,11 @@ public class BigQueryStorageSampler {
     options.getChannelPoolOptions().getInitialChannelCount().ifPresent(
         channelPoolSettingsBuilder::setInitialChannelCount);
 
-    // TODO(kmj): Can we fetch this directly from the stub settings rather than copying it?
-    InstantiatingGrpcChannelProvider.Builder channelProviderBuilder =
-        InstantiatingGrpcChannelProvider.newBuilder()
-            .setMaxInboundMessageSize(Integer.MAX_VALUE)
-            .setChannelPoolSettings(channelPoolSettingsBuilder.build());
+    // TODO(kmj): Can we fetch this directly from the stub settings rather than
+    // copying it?
+    InstantiatingGrpcChannelProvider.Builder channelProviderBuilder = InstantiatingGrpcChannelProvider.newBuilder()
+        .setMaxInboundMessageSize(Integer.MAX_VALUE)
+        .setChannelPoolSettings(channelPoolSettingsBuilder.build());
 
     // Note: this setter method overrides the channel pool settings specified above.
     options.getChannelsPerCpu().ifPresent(channelProviderBuilder::setChannelsPerCpu);
@@ -192,9 +211,8 @@ public class BigQueryStorageSampler {
           }
         }));
 
-    BigQueryReadSettings.Builder settingsBuilder =
-        BigQueryReadSettings.newBuilder()
-            .setTransportChannelProvider(channelProviderBuilder.build());
+    BigQueryReadSettings.Builder settingsBuilder = BigQueryReadSettings.newBuilder()
+        .setTransportChannelProvider(channelProviderBuilder.build());
 
     options.getEndpoint().ifPresent(settingsBuilder::setEndpoint);
     options.getExecutorThreadCount().ifPresent(s -> settingsBuilder.setBackgroundExecutorProvider(
@@ -210,18 +228,17 @@ public class BigQueryStorageSampler {
     System.out.println("Table: " + options.getTable());
     System.out.println("Data format: " + options.getFormat());
 
-    CreateReadSessionRequest createReadSessionRequest =
-        CreateReadSessionRequest.newBuilder()
-            .setParent(
-                ProjectReference.parseFromString(options.getParent()).toResourceName())
-            .setReadSession(
-                ReadSession.newBuilder()
-                    .setTable(
-                        TableReference.parseFromString(options.getTable()).toResourceName())
-                    .setDataFormat(
-                        DataFormat.parseFromString(options.getFormat()).toProto()))
-            .setMaxStreamCount(options.getMaxStreams())
-            .build();
+    CreateReadSessionRequest createReadSessionRequest = CreateReadSessionRequest.newBuilder()
+        .setParent(
+            ProjectReference.parseFromString(options.getParent()).toResourceName())
+        .setReadSession(
+            ReadSession.newBuilder()
+                .setTable(
+                    TableReference.parseFromString(options.getTable()).toResourceName())
+                .setDataFormat(
+                    DataFormat.parseFromString(options.getFormat()).toProto()))
+        .setMaxStreamCount(options.getMaxStreams())
+        .build();
 
     ReadSession readSession;
     long elapsedMillis;
